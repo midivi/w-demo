@@ -89,6 +89,10 @@ defmodule WailWeb.ClassroomLiveTest do
 
     assert has_element?(instructor_view, "#atc-lesson-running")
     assert has_element?(student_view, "#student-cockpit")
+    assert has_element?(student_view, "#primary-flight-display")
+    assert has_element?(student_view, "#artificial-horizon")
+    assert has_element?(student_view, "#airspeed-indicator")
+    assert has_element?(student_view, "#altitude-indicator")
     assert has_element?(student_view, "#atc-current-command", "Set throttle to 65 percent")
     assert has_element?(student_view, "#throttle-up")
 

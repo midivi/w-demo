@@ -41,6 +41,19 @@ To exercise the full flow:
 
 Run the complete project check with `mix precommit`.
 
+## Deploy to Fly.io
+
+The included `fly.toml` targets one always-on `shared-cpu-1x` Machine with 1 GB
+of memory in Amsterdam (`ams`). Classroom state is local to that single VM.
+
+1. Change the `app` value in `fly.toml` if `wail-atc-classroom` is unavailable.
+2. Create the Fly app with `fly apps create <app-name>`.
+3. Set the release secret with `fly secrets set SECRET_KEY_BASE=$(mix phx.gen.secret)`.
+4. Deploy one Machine with `fly deploy --ha=false`.
+
+No Postgres cluster or `DATABASE_URL` is required. If the Machine restarts or is
+replaced, all active classrooms are intentionally lost.
+
 ## Intentional limitations
 
 - no real WASM flight simulator or map engine

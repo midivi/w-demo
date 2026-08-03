@@ -409,8 +409,8 @@ defmodule WailWeb.ClassroomLive do
                 class={[
                   "cursor-pointer rounded-2xl border p-4 text-left transition hover:-translate-y-0.5",
                   if(@snapshot.plan.id == plan.id,
-                    do: "border-cyan-300/40 bg-cyan-300/10 shadow-lg shadow-cyan-950/30",
-                    else: "border-slate-200 bg-slate-50 hover:border-white/20"
+                    do: "border-cyan-400 bg-cyan-50 shadow-lg shadow-cyan-100",
+                    else: "border-slate-200 bg-slate-50 hover:border-slate-300"
                   )
                 ]}
               >
@@ -605,7 +605,7 @@ defmodule WailWeb.ClassroomLive do
                 phx-click="lesson_action"
                 phx-value-action="reset"
                 class={[
-                  "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-300 hover:border-rose-300/20 hover:text-rose-700"
+                  "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-600 hover:border-rose-300/40 hover:text-rose-700"
                 ]}
               ><.icon name="hero-arrow-path" class={["size-4"]} /> Reset</button>
             </div>
@@ -751,7 +751,7 @@ defmodule WailWeb.ClassroomLive do
     <section
       id="atc-current-command"
       class={[
-        "relative overflow-hidden rounded-3xl border border-cyan-300/20 bg-white/95 p-6 shadow-2xl shadow-cyan-950/25"
+        "relative overflow-hidden rounded-3xl border border-cyan-200 bg-white/95 p-6 shadow-xl shadow-cyan-100/60"
       ]}
     >
       <div class={["absolute inset-y-0 left-0 w-1 bg-cyan-300"]}></div>
@@ -912,7 +912,7 @@ defmodule WailWeb.ClassroomLive do
         phx-value-command="level"
         disabled={!@controls_enabled?}
         class={[
-          "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-300 transition",
+          "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600 transition",
           if(@controls_enabled?,
             do: "cursor-pointer hover:border-cyan-300/25 hover:text-cyan-700",
             else: "cursor-not-allowed opacity-40"
@@ -1155,7 +1155,7 @@ defmodule WailWeb.ClassroomLive do
           phx-value-command={@down}
           disabled={@disabled}
           class={[
-            "rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-black text-slate-300 transition",
+            "rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-black text-slate-600 transition",
             if(@disabled,
               do: "cursor-not-allowed opacity-40",
               else: "cursor-pointer hover:border-violet-300/30 hover:text-violet-700"
@@ -1169,7 +1169,7 @@ defmodule WailWeb.ClassroomLive do
           phx-value-command={@up}
           disabled={@disabled}
           class={[
-            "rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-black text-slate-300 transition",
+            "rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-black text-slate-600 transition",
             if(@disabled,
               do: "cursor-not-allowed opacity-40",
               else: "cursor-pointer hover:border-cyan-300/30 hover:text-cyan-700"
@@ -1314,7 +1314,7 @@ defmodule WailWeb.ClassroomLive do
               → {message.student_name}
             <% end %>
           </p>
-          <p class={["mt-1 text-xs leading-5 text-slate-300"]}>{message.text}</p>
+          <p class={["mt-1 text-xs leading-5 text-slate-700"]}>{message.text}</p>
         </div>
       </div>
     </section>
@@ -1391,7 +1391,7 @@ defmodule WailWeb.ClassroomLive do
     ~H"""
     <div class={["rounded-lg bg-slate-50 p-2"]}>
       <p class={["text-[0.5rem] uppercase tracking-wider text-slate-500"]}>{@label}</p>
-      <p class={["mt-1 font-mono text-xs font-bold text-slate-300"]}>{@value}</p>
+      <p class={["mt-1 font-mono text-xs font-bold text-slate-700"]}>{@value}</p>
     </div>
     """
   end
@@ -1480,7 +1480,7 @@ defmodule WailWeb.ClassroomLive do
   defp status_label(:completed), do: "completed"
 
   defp status_class(:waiting), do: "border-cyan-300/20 bg-cyan-300/10 text-cyan-700"
-  defp status_class(:running), do: "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+  defp status_class(:running), do: "border-emerald-300/30 bg-emerald-300/15 text-emerald-700"
   defp status_class(:paused), do: "border-amber-300/20 bg-amber-300/10 text-amber-700"
   defp status_class(:completed), do: "border-violet-300/20 bg-violet-300/10 text-violet-700"
 
@@ -1490,7 +1490,7 @@ defmodule WailWeb.ClassroomLive do
     do: "border-emerald-300/20 bg-emerald-300/[0.05] text-emerald-700"
 
   defp command_status_class(:failed), do: "border-rose-300/20 bg-rose-300/[0.05] text-rose-700"
-  defp command_status_class(:pending), do: "border-slate-200 bg-white/[0.02] text-slate-500"
+  defp command_status_class(:pending), do: "border-slate-200 bg-slate-50 text-slate-500"
 
   defp command_status_icon(:active), do: "hero-radio"
   defp command_status_icon(:completed), do: "hero-check"

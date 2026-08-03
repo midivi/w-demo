@@ -161,7 +161,7 @@ defmodule WailWeb.LobbyLive do
         </section>
 
         <section class={[
-          "relative overflow-hidden rounded-3xl border border-slate-200 bg-white/90 p-2 shadow-2xl shadow-cyan-950/40 backdrop-blur"
+          "relative overflow-hidden rounded-3xl border border-slate-200 bg-white/90 p-2 shadow-2xl shadow-slate-300/50 backdrop-blur"
         ]}>
           <div class={["rounded-[1.25rem] border border-slate-100 bg-slate-50/95 p-6 sm:p-8"]}>
             <div class={["mb-7 flex items-center justify-between"]}>
@@ -172,7 +172,7 @@ defmodule WailWeb.LobbyLive do
                 <h2 class={["mt-2 text-2xl font-bold text-slate-950"]}>Start or join a session</h2>
               </div>
               <div class={[
-                "flex size-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-300"
+                "flex size-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500"
               ]}>
                 <.icon name="hero-paper-airplane" class={["size-5 -rotate-45"]} />
               </div>
@@ -389,7 +389,7 @@ defmodule WailWeb.LobbyLive do
 
   defp architecture_badge(assigns) do
     ~H"""
-    <div class={["rounded-2xl border border-slate-200 bg-white/[0.035] p-4"]}>
+    <div class={["rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm"]}>
       <.icon name={@icon} class={["size-4 text-cyan-700"]} />
       <p class={["mt-3 text-sm font-bold text-slate-950"]}>{@title}</p>
       <p class={["mt-1 text-xs text-slate-500"]}>{@body}</p>
@@ -405,7 +405,7 @@ defmodule WailWeb.LobbyLive do
   defp lesson_status_class(:waiting), do: "border-cyan-300/20 bg-cyan-300/10 text-cyan-700"
 
   defp lesson_status_class(:running),
-    do: "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+    do: "border-emerald-300/30 bg-emerald-300/15 text-emerald-700"
 
   defp lesson_status_class(:paused), do: "border-amber-300/20 bg-amber-300/10 text-amber-700"
   defp lesson_status_class(:completed), do: "border-slate-200 bg-slate-50 text-slate-500"

@@ -7,17 +7,20 @@ defmodule Wail.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      WailWeb.Telemetry,
-      Wail.Repo,
-      {DNSCluster, query: Application.get_env(:wail, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Wail.PubSub},
-      {Registry, keys: :unique, name: Wail.Classrooms.Registry},
-      Wail.Classrooms.Supervisor,
-      WailWeb.ClassroomPresence,
-      # Start to serve requests, typically the last entry
-      WailWeb.Endpoint
-    ]
+    children =
+      [
+        WailWeb.Telemetry
+      ] ++
+        repo_children() ++
+        [
+          {DNSCluster, query: Application.get_env(:wail, :dns_cluster_query) || :ignore},
+          {Phoenix.PubSub, name: Wail.PubSub},
+          {Registry, keys: :unique, name: Wail.Classrooms.Registry},
+          Wail.Classrooms.Supervisor,
+          WailWeb.ClassroomPresence,
+          # Start to serve requests, typically the last entry
+          WailWeb.Endpoint
+        ]
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
@@ -31,5 +34,9 @@ defmodule Wail.Application do
   def config_change(changed, _new, removed) do
     WailWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp repo_children do
+    if Application.get_env(:wail, :start_repo, true), do: [Wail.Repo], else: []
   end
 end
