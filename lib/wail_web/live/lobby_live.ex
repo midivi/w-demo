@@ -26,6 +26,27 @@ defmodule WailWeb.LobbyLive do
   end
 
   @impl true
+  def handle_params(%{"room_id" => room_id, "auto_join" => "true"}, _uri, socket) do
+    room_id = Classrooms.normalize_room_id(room_id)
+
+    with {:ok, listing} <- Classrooms.listing(room_id),
+         true <- listing.joinable? do
+      {:noreply, navigate_student(socket, room_id)}
+    else
+      {:error, :room_not_found} ->
+        {:noreply,
+         socket
+         |> assign(:join_form, to_form(%{"room_id" => room_id}, as: :join))
+         |> put_flash(:error, "That classroom is not active. Check the room code and try again.")}
+
+      _not_joinable ->
+        {:noreply,
+         socket
+         |> assign(:join_form, to_form(%{"room_id" => room_id}, as: :join))
+         |> put_flash(:error, "That lesson is no longer accepting students.")}
+    end
+  end
+
   def handle_params(%{"room_id" => room_id}, _uri, socket) do
     {:noreply, assign(socket, :join_form, to_form(%{"room_id" => room_id}, as: :join))}
   end
@@ -60,13 +81,9 @@ defmodule WailWeb.LobbyLive do
 
   def handle_event("join_room", %{"join" => params}, socket) do
     room_id = Classrooms.normalize_room_id(params["room_id"] || "")
-    display_name = DemoNames.generate()
 
     if Classrooms.room_exists?(room_id) do
-      token =
-        ClassroomAccess.sign(room_id, socket.assigns.guest_id, display_name, :student)
-
-      {:noreply, push_navigate(socket, to: ~p"/rooms/#{room_id}?access=#{token}")}
+      {:noreply, navigate_student(socket, room_id)}
     else
       {:noreply,
        socket
@@ -77,12 +94,10 @@ defmodule WailWeb.LobbyLive do
 
   def handle_event("join_active", %{"active_join" => params}, socket) do
     room_id = Classrooms.normalize_room_id(params["room_id"] || "")
-    display_name = DemoNames.generate()
 
     with {:ok, listing} <- Classrooms.listing(room_id),
          true <- listing.joinable? do
-      token = ClassroomAccess.sign(room_id, socket.assigns.guest_id, display_name, :student)
-      {:noreply, push_navigate(socket, to: ~p"/rooms/#{room_id}?access=#{token}")}
+      {:noreply, navigate_student(socket, room_id)}
     else
       _not_joinable ->
         {:noreply, put_flash(socket, :error, "That lesson is no longer accepting students.")}
@@ -110,6 +125,13 @@ defmodule WailWeb.LobbyLive do
   end
 
   defp validate_name(_name), do: {:error, :invalid_name}
+
+  defp navigate_student(socket, room_id) do
+    display_name = DemoNames.generate()
+    token = ClassroomAccess.sign(room_id, socket.assigns.guest_id, display_name, :student)
+
+    push_navigate(socket, to: ~p"/rooms/#{room_id}?access=#{token}")
+  end
 
   @impl true
   def render(assigns) do

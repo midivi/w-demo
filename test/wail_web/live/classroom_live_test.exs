@@ -48,6 +48,15 @@ defmodule WailWeb.ClassroomLiveTest do
     assert has_element?(view, "#start-lesson[disabled]")
     assert has_element?(view, "#classroom-instructors")
     assert has_element?(view, "#classroom-students")
+    assert has_element?(view, "#student-join-links")
+    assert has_element?(view, "#student-join-url[href$='/join/#{room_id}']")
+
+    assert has_element?(
+             view,
+             "#student-auto-join-url[href$='/join/#{room_id}?auto_join=true']"
+           )
+
+    assert has_element?(view, "#student-auto-join-help")
 
     view |> element("#lesson_plans-combined_sequence") |> render_click()
     assert has_element?(view, "#lesson-command-preview", "Combined flight sequence")

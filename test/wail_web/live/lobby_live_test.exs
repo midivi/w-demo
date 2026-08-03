@@ -73,6 +73,27 @@ defmodule WailWeb.LobbyLiveTest do
     assert [_first_name, _animal] = String.split(display_name)
   end
 
+  test "auto-join URL enrolls distinct random students without a form submission", %{conn: conn} do
+    {room_id, room_pid} = create_lesson_room("Captain Vega")
+    on_exit(fn -> stop_room(room_pid) end)
+
+    auto_join_url = ~p"/join/#{room_id}?auto_join=true"
+
+    first_destination = auto_join_destination(conn, auto_join_url)
+    second_destination = auto_join_destination(conn, auto_join_url)
+
+    {:ok, first_view, _html} = live(conn, first_destination)
+    {:ok, second_view, _html} = live(conn, second_destination)
+
+    assert has_element?(first_view, "#student-waiting-room")
+    assert has_element?(second_view, "#student-waiting-room")
+
+    assert {:ok, snapshot} = Classrooms.snapshot(room_id)
+    assert length(snapshot.students) == 2
+    assert snapshot.students |> Enum.map(& &1.id) |> Enum.uniq() |> length() == 2
+    assert Enum.all?(snapshot.students, &(length(String.split(&1.name)) == 2))
+  end
+
   test "keeps the user in the lobby when a room is missing", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
@@ -133,6 +154,12 @@ defmodule WailWeb.LobbyLiveTest do
       )
 
     {room_id, room.pid}
+  end
+
+  defp auto_join_destination(conn, url) do
+    assert {:error, {redirect_kind, %{to: destination}}} = live(conn, url)
+    assert redirect_kind in [:redirect, :live_redirect]
+    destination
   end
 
   defp stop_room(pid) do

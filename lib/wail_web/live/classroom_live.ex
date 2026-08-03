@@ -39,6 +39,10 @@ defmodule WailWeb.ClassroomLive do
         |> assign(:participant_count, length(roster))
         |> assign(:student_count, length(students))
         |> assign(:student_join_url, WailWeb.Endpoint.url() <> ~p"/join/#{room_id}")
+        |> assign(
+          :student_auto_join_url,
+          WailWeb.Endpoint.url() <> ~p"/join/#{room_id}?auto_join=true"
+        )
         |> assign(:plans, LessonPlan.list())
         |> stream(:instructors, instructors)
         |> stream(:students, students)
@@ -358,6 +362,7 @@ defmodule WailWeb.ClassroomLive do
               lesson_form={@lesson_form}
               streams={@streams}
               student_join_url={@student_join_url}
+              student_auto_join_url={@student_auto_join_url}
             />
           <% else %>
             <.student_view snapshot={@snapshot} student={@current_student} streams={@streams} />
@@ -372,6 +377,7 @@ defmodule WailWeb.ClassroomLive do
   attr :lesson_form, :map, required: true
   attr :streams, :map, required: true
   attr :student_join_url, :string, required: true
+  attr :student_auto_join_url, :string, required: true
 
   defp instructor_view(assigns) do
     ~H"""
@@ -549,13 +555,54 @@ defmodule WailWeb.ClassroomLive do
                 Start lesson <.icon name="hero-play" class={["size-4"]} />
               </button>
             </div>
-            <div class={["mt-5 rounded-xl border border-slate-200 bg-slate-100/80 p-3"]}>
-              <p class={["text-[0.55rem] font-black uppercase tracking-[0.16em] text-slate-500"]}>
-                Student join link
-              </p>
-              <p id="student-join-url" class={["mt-2 truncate font-mono text-xs text-slate-500"]}>
-                {@student_join_url}
-              </p>
+            <div id="student-join-links" class={["mt-5 grid gap-3 sm:grid-cols-2"]}>
+              <div class={["rounded-xl border border-slate-200 bg-slate-100/80 p-3"]}>
+                <p class={["text-[0.55rem] font-black uppercase tracking-[0.16em] text-slate-500"]}>
+                  Manual join link
+                </p>
+                <.link
+                  id="student-join-url"
+                  href={@student_join_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class={[
+                    "mt-2 block break-all font-mono text-xs text-slate-500 transition hover:text-cyan-700"
+                  ]}
+                >
+                  {@student_join_url}
+                </.link>
+              </div>
+              <div class={["rounded-xl border border-violet-300/20 bg-violet-300/[0.07] p-3"]}>
+                <div class={["flex items-center justify-between gap-3"]}>
+                  <p class={[
+                    "text-[0.55rem] font-black uppercase tracking-[0.16em] text-violet-700"
+                  ]}>
+                    Automatic test join
+                  </p>
+                  <span class={[
+                    "rounded-full bg-violet-300/15 px-2 py-1 text-[0.5rem] font-black uppercase tracking-wider text-violet-700"
+                  ]}>
+                    No form
+                  </span>
+                </div>
+                <.link
+                  id="student-auto-join-url"
+                  href={@student_auto_join_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class={[
+                    "mt-2 block break-all font-mono text-xs font-bold text-violet-700 transition hover:text-violet-900"
+                  ]}
+                >
+                  {@student_auto_join_url}
+                </.link>
+                <p
+                  id="student-auto-join-help"
+                  class={["mt-2 text-[0.65rem] leading-4 text-slate-500"]}
+                >
+                  Open this same URL in multiple tabs to create a random student in each tab.
+                </p>
+              </div>
             </div>
           </section>
         </div>
