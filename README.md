@@ -22,10 +22,21 @@ classrooms or telemetry.
 
 ## Run the demo
 
-To start your Phoenix server:
+Start the disposable development database (no Compose volume is configured):
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+```bash
+docker compose up -d
+```
+
+Once `docker compose ps` reports PostgreSQL as healthy, install the application
+dependencies, prepare the database, and start Phoenix:
+
+```bash
+mix setup
+mix phx.server
+```
+
+To run Phoenix inside IEx instead, use `iex -S mix phx.server`.
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
