@@ -4,6 +4,7 @@ defmodule WailWeb.Router do
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
+    plug WailWeb.Plugs.EnsureGuestIdentity
     plug :fetch_live_flash
     plug :put_root_layout, html: {WailWeb.Layouts, :root}
     plug :protect_from_forgery
@@ -17,7 +18,9 @@ defmodule WailWeb.Router do
   scope "/", WailWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", LobbyLive, :index
+    live "/join/:room_id", LobbyLive, :join
+    live "/rooms/:room_id", ClassroomLive, :show
   end
 
   # Other scopes may use custom stacks.

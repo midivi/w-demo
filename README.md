@@ -1,4 +1,26 @@
-# Wail
+# Wail Flight Classroom
+
+A small Phoenix demonstration of a server-authoritative ATC flight classroom.
+An instructor selects a lesson plan, students join from a live lobby, and every
+student receives an independent fake aircraft owned by the room process.
+
+The demo deliberately keeps the flight model simple so the Phoenix architecture
+is easy to see:
+
+- one `ClassroomServer` GenServer per active room
+- `DynamicSupervisor` and `Registry` for room lifecycle and lookup
+- a deterministic ATC lesson engine for targets, timers, retries, and scoring
+- five built-in lesson plans with configurable attempt timing
+- Phoenix.PubSub for 4 Hz aircraft telemetry and live lobby status
+- Phoenix.Presence for the connected roster
+- LiveView for the lobby, instructor console, ATC transcript, and cockpits
+- signed guest capabilities for role and per-student aircraft authorization
+
+Rooms live in memory and shut down after being empty for ten minutes. The
+database is part of the generated Phoenix application but is not used to store
+classrooms or telemetry.
+
+## Run the demo
 
 To start your Phoenix server:
 
@@ -7,12 +29,24 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
-Ready to run in production? Please [check our deployment guides](https://phoenix.hexdocs.pm/deployment.html).
+To exercise the full flow:
 
-## Learn more
+1. Enter an instructor name and create a classroom.
+2. Select one of the five lesson plans and configure the attempt duration and count.
+3. Open the lobby in another browser, enter a student name, and join the waiting lesson.
+4. Enroll additional students, then start the lesson from the instructor console.
+5. Follow the ATC commands from each independent student cockpit.
+6. Watch retries, transcripts, command progress, and the shared leaderboard update live.
+7. Use the instructor controls to pause, continue, or reset the lesson.
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://phoenix.hexdocs.pm/overview.html
-* Docs: https://phoenix.hexdocs.pm
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+Run the complete project check with `mix precommit`.
+
+## Intentional limitations
+
+- no real WASM flight simulator or map engine
+- no database-backed users or rooms
+- no custom browser Channel alongside LiveView
+- no room recovery after an application restart
+- no enrollment after a lesson has started; enrolled students may reconnect
+- no audio or speech synthesis for ATC messages
+- illustrative rather than realistic flight dynamics

@@ -12,8 +12,9 @@ defmodule Wail.Application do
       Wail.Repo,
       {DNSCluster, query: Application.get_env(:wail, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Wail.PubSub},
-      # Start a worker by calling: Wail.Worker.start_link(arg)
-      # {Wail.Worker, arg},
+      {Registry, keys: :unique, name: Wail.Classrooms.Registry},
+      Wail.Classrooms.Supervisor,
+      WailWeb.ClassroomPresence,
       # Start to serve requests, typically the last entry
       WailWeb.Endpoint
     ]

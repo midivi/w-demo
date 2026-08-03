@@ -35,39 +35,50 @@ defmodule WailWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
+    <div class={["min-h-screen bg-[#f4f7fb] text-slate-700"]}>
+      <div class={["pointer-events-none fixed inset-0 overflow-hidden"]}>
+        <div class={[
+          "absolute -left-48 -top-48 size-[34rem] rounded-full bg-cyan-400/[0.10] blur-3xl"
+        ]}>
+        </div>
+        <div class={[
+          "absolute -bottom-64 -right-48 size-[38rem] rounded-full bg-violet-400/[0.08] blur-3xl"
+        ]}>
+        </div>
       </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://phoenix.hexdocs.pm/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+      <header class={[
+        "relative z-10 border-b border-slate-200/80 bg-white/85 px-4 shadow-sm backdrop-blur sm:px-6 lg:px-8"
+      ]}>
+        <div class={["mx-auto flex h-16 max-w-[96rem] items-center justify-between"]}>
+          <.link navigate={~p"/"} class={["flex items-center gap-3"]}>
+            <span class={[
+              "flex size-9 items-center justify-center rounded-xl border border-cyan-600/20 bg-cyan-600/10 text-cyan-700"
+            ]}>
+              <.icon name="hero-paper-airplane" class={["size-4 -rotate-45"]} />
+            </span>
+            <span>
+              <span class={["block text-xs font-black tracking-[0.18em] text-slate-950"]}>WAIL</span>
+              <span class={[
+                "block text-[0.55rem] font-semibold uppercase tracking-[0.16em] text-slate-500"
+              ]}>Flight classroom</span>
+            </span>
+          </.link>
+          <div class={[
+            "flex items-center gap-2 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-slate-500"
+          ]}>
+            <span class={[
+              "size-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.35)]"
+            ]}></span>
+            Phoenix online
+          </div>
+        </div>
+      </header>
+
+      <main class={["relative z-0 px-4 sm:px-6 lg:px-8"]}>
         {render_slot(@inner_block)}
-      </div>
-    </main>
-
+      </main>
+    </div>
     <.flash_group flash={@flash} />
     """
   end
