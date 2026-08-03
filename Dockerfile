@@ -58,6 +58,7 @@ ENV LC_ALL=en_US.UTF-8
 ENV MIX_ENV=prod
 ENV HOME=/app
 ENV PHX_SERVER=true
+ENV PORT=8080
 
 WORKDIR /app
 RUN chown nobody:root /app
@@ -66,7 +67,7 @@ COPY --from=builder --chown=nobody:root /app/_build/prod/rel/wail ./
 
 USER nobody
 
-EXPOSE 4000
+EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/app/bin/wail", "start"]
