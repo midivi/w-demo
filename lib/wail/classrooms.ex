@@ -96,6 +96,15 @@ defmodule Wail.Classrooms do
   end
 
   def topic(room_id), do: "classroom:#{normalize_room_id(room_id)}"
+
+  def updates_topic(room_id, %{role: :instructor}) do
+    "#{topic(room_id)}:updates:instructor"
+  end
+
+  def updates_topic(room_id, %{role: :student, id: participant_id}) do
+    "#{topic(room_id)}:updates:student:#{participant_id}"
+  end
+
   def lobby_topic, do: "classrooms:lobby"
 
   def normalize_room_id(room_id) when is_binary(room_id) do

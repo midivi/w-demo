@@ -116,8 +116,7 @@ defmodule WailWeb.ClassroomLiveTest do
     assert find_student(snapshot, newest_student_id).flight.bank_deg == 3.0
 
     {:ok, snapshot} = Classrooms.tick(room_id, 2_000)
-    send(student_view.pid, {:classroom_updated, snapshot})
-    send(instructor_view.pid, {:classroom_updated, snapshot})
+    assert length(snapshot.students) == 2
 
     assert has_element?(student_view, "#leaderboard-#{student_id}", "+1")
     assert has_element?(student_view, "#atc-transcript", "Roger")

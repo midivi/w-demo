@@ -11,6 +11,7 @@ defmodule Wail.Classrooms.ClassroomServer do
   alias Wail.Classrooms.StudentSession
 
   @default_tick_interval 250
+  @default_broadcast_interval 1_000
   @default_idle_timeout :timer.minutes(10)
   @default_config %{
     attempt_duration_ms: 30_000,
@@ -67,12 +68,15 @@ defmodule Wail.Classrooms.ClassroomServer do
       students: %{},
       participant_count: 0,
       idle_timer: nil,
+      tick_timer: nil,
       tick_interval: Keyword.get(opts, :tick_interval, @default_tick_interval),
+      broadcast_interval: Keyword.get(opts, :broadcast_interval, @default_broadcast_interval),
+      broadcast_elapsed_ms: 0,
       idle_timeout: Keyword.get(opts, :idle_timeout, @default_idle_timeout),
       last_tick_at: monotonic_ms()
     }
 
-    {:ok, state |> schedule_tick() |> schedule_idle_shutdown()}
+    {:ok, schedule_idle_shutdown(state)}
   end
 
   @impl true
@@ -82,8 +86,8 @@ defmodule Wail.Classrooms.ClassroomServer do
   def handle_call({:enroll, participant}, _from, state) do
     case enroll_participant(state, participant) do
       {:ok, state, changed?} ->
-        if changed?, do: broadcast_all(state), else: broadcast(state)
-        {:reply, {:ok, build_snapshot(state)}, state}
+        if changed?, do: broadcast_all(state)
+        {:reply, {:ok, build_participant_snapshot(state, participant)}, state}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -108,7 +112,7 @@ defmodule Wail.Classrooms.ClassroomServer do
       }
 
       broadcast_all(state)
-      {:reply, {:ok, build_snapshot(state)}, state}
+      {:reply, {:ok, build_participant_snapshot(state, participant)}, state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -117,8 +121,9 @@ defmodule Wail.Classrooms.ClassroomServer do
   def handle_call({:lesson_action, participant, action}, _from, state) do
     with :ok <- authorize_instructor(state, participant),
          {:ok, state} <- apply_lesson_action(state, action) do
+      state = sync_tick_timer(state)
       broadcast_all(state)
-      {:reply, {:ok, build_snapshot(state)}, state}
+      {:reply, {:ok, build_participant_snapshot(state, participant)}, state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -131,8 +136,7 @@ defmodule Wail.Classrooms.ClassroomServer do
          {:ok, flight} <- FlightModel.apply_command(student.flight, command) do
       student = %{student | flight: flight}
       state = put_in(state.students[student.id], student)
-      broadcast(state)
-      {:reply, {:ok, build_snapshot(state)}, state}
+      {:reply, {:ok, build_participant_snapshot(state, participant)}, state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -141,6 +145,7 @@ defmodule Wail.Classrooms.ClassroomServer do
   def handle_call({:tick, elapsed_ms}, _from, state)
       when is_integer(elapsed_ms) and elapsed_ms > 0 do
     {state, status_changed?} = advance(state, elapsed_ms)
+    state = sync_tick_timer(state)
     if status_changed?, do: broadcast_all(state), else: broadcast(state)
     {:reply, {:ok, build_snapshot(state)}, state}
   end
@@ -160,16 +165,26 @@ defmodule Wail.Classrooms.ClassroomServer do
   end
 
   @impl true
-  def handle_info(:tick, state) do
+  def handle_info({:tick, token}, %{tick_timer: {_timer_ref, token}} = state) do
     now = monotonic_ms()
     elapsed_ms = max(now - state.last_tick_at, 1)
-    state = %{state | last_tick_at: now}
+    state = %{state | last_tick_at: now, tick_timer: nil}
     {state, status_changed?} = advance(state, elapsed_ms)
-    state = schedule_tick(state)
+    broadcast_elapsed_ms = state.broadcast_elapsed_ms + elapsed_ms
 
-    if status_changed?, do: broadcast_all(state), else: broadcast(state)
-    {:noreply, state}
+    state =
+      if status_changed? or broadcast_elapsed_ms >= state.broadcast_interval do
+        broadcast(state)
+        %{state | broadcast_elapsed_ms: 0}
+      else
+        %{state | broadcast_elapsed_ms: broadcast_elapsed_ms}
+      end
+
+    if status_changed?, do: broadcast_listing_changed(state.room_id)
+    {:noreply, sync_tick_timer(state)}
   end
+
+  def handle_info({:tick, _token}, state), do: {:noreply, state}
 
   def handle_info(
         {:idle_shutdown, token},
@@ -364,8 +379,7 @@ defmodule Wail.Classrooms.ClassroomServer do
     students =
       state.students |> Map.values() |> Enum.map(&student_snapshot(&1, plan, state.lesson_config))
 
-    leaderboard =
-      Enum.sort_by(students, &{-&1.score, -length(&1.results), String.downcase(&1.name)})
+    leaderboard = build_leaderboard(students)
 
     %{
       room_id: state.room_id,
@@ -379,6 +393,31 @@ defmodule Wail.Classrooms.ClassroomServer do
       students: students,
       leaderboard: leaderboard
     }
+  end
+
+  defp build_participant_snapshot(state, %{role: :instructor}), do: build_snapshot(state)
+
+  defp build_participant_snapshot(state, %{role: :student, id: student_id}) do
+    state
+    |> build_snapshot()
+    |> scope_snapshot_to_student(student_id)
+  end
+
+  defp build_leaderboard(students) do
+    students
+    |> Enum.sort_by(&{-&1.score, -length(&1.results), String.downcase(&1.name)})
+    |> Enum.map(fn student ->
+      %{
+        id: student.id,
+        name: student.name,
+        score: student.score,
+        commands_judged: length(student.results)
+      }
+    end)
+  end
+
+  defp scope_snapshot_to_student(snapshot, student_id) do
+    %{snapshot | students: Enum.filter(snapshot.students, &(&1.id == student_id))}
   end
 
   defp student_snapshot(student, plan, config) do
@@ -456,11 +495,26 @@ defmodule Wail.Classrooms.ClassroomServer do
   end
 
   defp broadcast(state) do
+    snapshot = build_snapshot(state)
+    instructor = %{role: :instructor, id: state.instructor.id}
+    students_by_id = Map.new(snapshot.students, &{&1.id, &1})
+
     Phoenix.PubSub.broadcast(
       Wail.PubSub,
-      Classrooms.topic(state.room_id),
-      {:classroom_updated, build_snapshot(state)}
+      Classrooms.updates_topic(state.room_id, instructor),
+      {:classroom_updated, snapshot}
     )
+
+    Enum.each(Map.keys(state.students), fn student_id ->
+      participant = %{role: :student, id: student_id}
+      student_snapshot = %{snapshot | students: [Map.fetch!(students_by_id, student_id)]}
+
+      Phoenix.PubSub.broadcast(
+        Wail.PubSub,
+        Classrooms.updates_topic(state.room_id, participant),
+        {:classroom_updated, student_snapshot}
+      )
+    end)
   end
 
   defp broadcast_listing_changed(room_id) do
@@ -471,11 +525,26 @@ defmodule Wail.Classrooms.ClassroomServer do
     )
   end
 
+  defp sync_tick_timer(%{status: status} = state) when status in [:running, :paused],
+    do: schedule_tick(state)
+
+  defp sync_tick_timer(state), do: cancel_tick(state)
+
   defp schedule_tick(%{tick_interval: :manual} = state), do: state
+  defp schedule_tick(%{tick_timer: {_timer_ref, _token}} = state), do: state
 
   defp schedule_tick(state) do
-    Process.send_after(self(), :tick, state.tick_interval)
-    state
+    token = make_ref()
+    timer_ref = Process.send_after(self(), {:tick, token}, state.tick_interval)
+    %{state | tick_timer: {timer_ref, token}}
+  end
+
+  defp cancel_tick(%{tick_timer: nil} = state), do: state
+
+  defp cancel_tick(state) do
+    {timer_ref, _token} = state.tick_timer
+    Process.cancel_timer(timer_ref)
+    %{state | tick_timer: nil, broadcast_elapsed_ms: 0}
   end
 
   defp schedule_idle_shutdown(state) do

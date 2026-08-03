@@ -42,9 +42,12 @@ defmodule Wail.Classrooms.ClassroomServerTest do
     assert {:ok, _snapshot} = ClassroomServer.enroll(server, second)
     assert {:ok, _snapshot} = ClassroomServer.lesson_action(server, instructor, :start)
 
-    assert {:ok, snapshot} =
+    assert {:ok, student_snapshot} =
              ClassroomServer.flight_command(server, first, {:adjust, :throttle, 10})
 
+    assert Enum.map(student_snapshot.students, & &1.id) == [first.id]
+
+    assert {:ok, snapshot} = ClassroomServer.snapshot(server)
     assert student_snapshot(snapshot, first.id).flight.throttle_percent == 65
     assert student_snapshot(snapshot, second.id).flight.throttle_percent == 55
 
@@ -203,6 +206,70 @@ defmodule Wail.Classrooms.ClassroomServerTest do
 
     ClassroomServer.presence_changed(server, 0)
     assert_receive {:DOWN, ^monitor_ref, :process, ^server, :normal}, 200
+  end
+
+  test "automatic ticks only run during active lessons and throttle broadcasts", context do
+    %{server: server, room_id: room_id, instructor: instructor} = context
+    student = student("student-timer", "Timer Pilot")
+
+    server_state = :sys.get_state(server)
+    assert server_state.tick_timer == nil
+
+    {:ok, automatic_server} =
+      start_supervised(
+        {ClassroomServer,
+         room_id: "#{room_id}-AUTO",
+         instructor_id: instructor.id,
+         instructor_name: instructor.display_name,
+         tick_interval: 60_000,
+         broadcast_interval: 10_000,
+         idle_timeout: :timer.minutes(1)},
+        id: :automatic_classroom_server
+      )
+
+    automatic_room_id = "#{room_id}-AUTO"
+
+    Phoenix.PubSub.subscribe(
+      Wail.PubSub,
+      Wail.Classrooms.updates_topic(automatic_room_id, instructor)
+    )
+
+    {:ok, _snapshot} = ClassroomServer.enroll(automatic_server, student)
+    assert_receive {:classroom_updated, %{status: :waiting}}
+    {:ok, _snapshot} = ClassroomServer.lesson_action(automatic_server, instructor, :start)
+    assert_receive {:classroom_updated, %{status: :running}}
+
+    %{tick_timer: {_timer_ref, tick_token}} = :sys.get_state(automatic_server)
+    send(automatic_server, {:tick, tick_token})
+    _state = :sys.get_state(automatic_server)
+    refute_receive {:classroom_updated, _snapshot}, 20
+
+    {:ok, _snapshot} = ClassroomServer.lesson_action(automatic_server, instructor, :reset)
+    assert_receive {:classroom_updated, %{status: :waiting}}
+    assert :sys.get_state(automatic_server).tick_timer == nil
+  end
+
+  test "student payloads stay compact as enrollment grows", %{server: server} do
+    students =
+      Enum.map(1..100, fn index ->
+        student("student-#{index}", "Pilot #{index}")
+      end)
+
+    Enum.each(students, fn participant ->
+      assert {:ok, %{students: [_student]}} = ClassroomServer.enroll(server, participant)
+    end)
+
+    last_student = List.last(students)
+    assert {:ok, student_snapshot} = ClassroomServer.enroll(server, last_student)
+    assert {:ok, instructor_snapshot} = ClassroomServer.snapshot(server)
+
+    assert Enum.map(student_snapshot.students, & &1.id) == [last_student.id]
+    assert length(student_snapshot.leaderboard) == 100
+    refute Map.has_key?(List.first(student_snapshot.leaderboard), :flight)
+    refute Map.has_key?(List.first(student_snapshot.leaderboard), :results)
+
+    assert :erlang.external_size(student_snapshot) <
+             div(:erlang.external_size(instructor_snapshot), 2)
   end
 
   defp student(id, name), do: %{id: id, display_name: name, role: :student}

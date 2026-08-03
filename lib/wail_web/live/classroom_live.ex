@@ -17,6 +17,7 @@ defmodule WailWeb.ClassroomLive do
 
       if connected?(socket) do
         Phoenix.PubSub.subscribe(Wail.PubSub, topic)
+        Phoenix.PubSub.subscribe(Wail.PubSub, Classrooms.updates_topic(room_id, participant))
 
         {:ok, _presence_ref} =
           ClassroomPresence.track(self(), topic, participant.id, %{
@@ -151,6 +152,7 @@ defmodule WailWeb.ClassroomLive do
   defp sync_snapshot(socket, snapshot, opts \\ []) do
     previous = socket.assigns[:snapshot]
     participant = socket.assigns.participant
+    initial? = Keyword.get(opts, :initial?, false)
     current_student = Enum.find(snapshot.students, &(&1.id == participant.id))
     transcript = transcript_for(snapshot, participant)
     command_progress = command_progress(snapshot.plan.commands, current_student)
@@ -162,10 +164,35 @@ defmodule WailWeb.ClassroomLive do
       |> assign(:snapshot, snapshot)
       |> assign(:current_student, current_student)
       |> assign(:lesson_in_progress?, snapshot.status in [:running, :paused])
-      |> stream(:leaderboard, snapshot.leaderboard, reset: !Keyword.get(opts, :initial?, false))
-      |> stream(:student_progress, snapshot.students, reset: !Keyword.get(opts, :initial?, false))
-      |> stream(:transcript, transcript, reset: !Keyword.get(opts, :initial?, false))
-      |> stream(:command_progress, command_progress, reset: !Keyword.get(opts, :initial?, false))
+      |> maybe_stream(
+        :leaderboard,
+        snapshot.leaderboard,
+        previous && previous.leaderboard,
+        initial?
+      )
+      |> maybe_stream_for_role(
+        :student_progress,
+        snapshot.students,
+        previous && previous.students,
+        initial?,
+        participant,
+        :instructor
+      )
+      |> maybe_stream(
+        :transcript,
+        transcript,
+        previous && transcript_for(previous, participant),
+        initial?
+      )
+      |> maybe_stream_for_role(
+        :command_progress,
+        command_progress,
+        previous &&
+          command_progress(previous.plan.commands, current_student_for(previous, participant)),
+        initial?,
+        participant,
+        :student
+      )
 
     socket =
       if config_changed? or plan_changed? do
@@ -174,14 +201,49 @@ defmodule WailWeb.ClassroomLive do
         socket
       end
 
-    if plan_changed? or Keyword.get(opts, :initial?, false) do
-      stream(socket, :lesson_commands, snapshot.plan.commands,
-        reset: !Keyword.get(opts, :initial?, false)
-      )
+    if plan_changed? or initial? do
+      stream(socket, :lesson_commands, snapshot.plan.commands, reset: !initial?)
     else
       socket
     end
   end
+
+  defp maybe_stream(socket, name, items, previous_items, initial?) do
+    if initial? or items != previous_items do
+      stream(socket, name, items, reset: !initial?)
+    else
+      socket
+    end
+  end
+
+  defp maybe_stream_for_role(
+         socket,
+         name,
+         items,
+         previous_items,
+         initial?,
+         %{role: role},
+         role
+       ) do
+    maybe_stream(socket, name, items, previous_items, initial?)
+  end
+
+  defp maybe_stream_for_role(
+         socket,
+         _name,
+         _items,
+         _previous_items,
+         _initial?,
+         _participant,
+         _role
+       ),
+       do: socket
+
+  defp current_student_for(snapshot, %{role: :student, id: id}) do
+    Enum.find(snapshot.students, &(&1.id == id))
+  end
+
+  defp current_student_for(_snapshot, %{role: :instructor}), do: nil
 
   defp transcript_for(snapshot, %{role: :student, id: id}) do
     case Enum.find(snapshot.students, &(&1.id == id)) do
@@ -1304,7 +1366,7 @@ defmodule WailWeb.ClassroomLive do
             <p class={["truncate text-xs font-bold text-slate-950"]}>{student.name}</p><p class={[
               "mt-0.5 text-[0.6rem] text-slate-500"
             ]}>
-              {length(student.results)} commands judged
+              {student.commands_judged} commands judged
             </p>
           </div>
           <span class={[
