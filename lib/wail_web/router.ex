@@ -16,6 +16,10 @@ defmodule WailWeb.Router do
   end
 
   scope "/", WailWeb do
+    get "/health", PageController, :health
+  end
+
+  scope "/", WailWeb do
     pipe_through :browser
 
     live "/", LobbyLive, :index

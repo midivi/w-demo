@@ -9,7 +9,6 @@ defmodule WailWeb.LobbyLive do
   def mount(params, session, socket) do
     room_id = params |> Map.get("room_id", "") |> Classrooms.normalize_room_id()
     lessons = Classrooms.list_active_lessons()
-    student_name = DemoNames.generate()
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Wail.PubSub, Classrooms.lobby_topic())
@@ -20,16 +19,15 @@ defmodule WailWeb.LobbyLive do
      |> assign(:page_title, "Flight classroom")
      |> assign(:guest_id, Map.fetch!(session, "guest_id"))
      |> assign(:create_form, to_form(%{"name" => ""}, as: :create))
-     |> assign(:join_form, to_form(%{"name" => student_name, "room_id" => room_id}, as: :join))
-     |> assign(:active_join_form, to_form(%{"name" => student_name}, as: :active_join))
+     |> assign(:join_form, to_form(%{"room_id" => room_id}, as: :join))
+     |> assign(:active_join_form, to_form(%{}, as: :active_join))
      |> assign(:lesson_count, length(lessons))
      |> stream(:lessons, lessons)}
   end
 
   @impl true
   def handle_params(%{"room_id" => room_id}, _uri, socket) do
-    params = %{"name" => socket.assigns.join_form[:name].value || "", "room_id" => room_id}
-    {:noreply, assign(socket, :join_form, to_form(params, as: :join))}
+    {:noreply, assign(socket, :join_form, to_form(%{"room_id" => room_id}, as: :join))}
   end
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
@@ -62,43 +60,30 @@ defmodule WailWeb.LobbyLive do
 
   def handle_event("join_room", %{"join" => params}, socket) do
     room_id = Classrooms.normalize_room_id(params["room_id"] || "")
+    display_name = DemoNames.generate()
 
-    with {:ok, display_name} <- validate_name(params["name"]),
-         true <- Classrooms.room_exists?(room_id) do
+    if Classrooms.room_exists?(room_id) do
       token =
         ClassroomAccess.sign(room_id, socket.assigns.guest_id, display_name, :student)
 
       {:noreply, push_navigate(socket, to: ~p"/rooms/#{room_id}?access=#{token}")}
     else
-      {:error, :invalid_name} ->
-        {:noreply,
-         socket
-         |> assign(:join_form, to_form(params, as: :join))
-         |> put_flash(:error, "Enter a display name between 2 and 30 characters.")}
-
-      false ->
-        {:noreply,
-         socket
-         |> assign(:join_form, to_form(params, as: :join))
-         |> put_flash(:error, "That classroom is not active. Check the room code and try again.")}
+      {:noreply,
+       socket
+       |> assign(:join_form, to_form(params, as: :join))
+       |> put_flash(:error, "That classroom is not active. Check the room code and try again.")}
     end
   end
 
   def handle_event("join_active", %{"active_join" => params}, socket) do
     room_id = Classrooms.normalize_room_id(params["room_id"] || "")
+    display_name = DemoNames.generate()
 
-    with {:ok, display_name} <- validate_name(params["name"]),
-         {:ok, listing} <- Classrooms.listing(room_id),
+    with {:ok, listing} <- Classrooms.listing(room_id),
          true <- listing.joinable? do
       token = ClassroomAccess.sign(room_id, socket.assigns.guest_id, display_name, :student)
       {:noreply, push_navigate(socket, to: ~p"/rooms/#{room_id}?access=#{token}")}
     else
-      {:error, :invalid_name} ->
-        {:noreply,
-         socket
-         |> assign(:active_join_form, to_form(params, as: :active_join))
-         |> put_flash(:error, "Enter a display name between 2 and 30 characters.")}
-
       _not_joinable ->
         {:noreply, put_flash(socket, :error, "That lesson is no longer accepting students.")}
     end
@@ -208,17 +193,7 @@ defmodule WailWeb.LobbyLive do
               </div>
 
               <.form for={@join_form} id="join-room-form" phx-submit="join_room">
-                <div class={["grid gap-3 sm:grid-cols-2"]}>
-                  <.input
-                    field={@join_form[:name]}
-                    type="text"
-                    label="Student display name"
-                    placeholder="e.g. Sam"
-                    autocomplete="name"
-                    class={[
-                      "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
-                    ]}
-                  />
+                <div class={["space-y-2"]}>
                   <.input
                     field={@join_form[:room_id]}
                     type="text"
@@ -229,6 +204,9 @@ defmodule WailWeb.LobbyLive do
                       "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm uppercase text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
                     ]}
                   />
+                  <p id="join-room-callsign-note" class={["text-xs leading-5 text-slate-500"]}>
+                    A random student callsign will be assigned when you join.
+                  </p>
                 </div>
                 <button
                   id="join-room-button"
@@ -281,18 +259,9 @@ defmodule WailWeb.LobbyLive do
             phx-submit="join_active"
             class={["mt-6"]}
           >
-            <div class={["mb-5 max-w-sm"]}>
-              <.input
-                field={@active_join_form[:name]}
-                type="text"
-                label="Your student name"
-                placeholder="e.g. Victor"
-                autocomplete="name"
-                class={[
-                  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-violet-300/60 focus:ring-2 focus:ring-violet-300/10"
-                ]}
-              />
-            </div>
+            <p id="active-join-callsign-note" class={["mb-5 text-xs leading-5 text-slate-500"]}>
+              Joining assigns a random student callsign automatically.
+            </p>
 
             <div id="active-lessons" phx-update="stream" class={["grid gap-4 lg:grid-cols-2"]}>
               <div

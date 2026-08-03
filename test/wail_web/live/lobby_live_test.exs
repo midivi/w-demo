@@ -4,6 +4,7 @@ defmodule WailWeb.LobbyLiveTest do
   import Phoenix.LiveViewTest
 
   alias Wail.Classrooms
+  alias WailWeb.ClassroomAccess
 
   setup %{conn: conn} do
     {:ok, conn: init_test_session(conn, %{guest_id: "lobby-test-guest"})}
@@ -19,8 +20,10 @@ defmodule WailWeb.LobbyLiveTest do
     assert has_element?(view, "#join-room-button")
     assert has_element?(view, "#active-lessons-panel")
     assert has_element?(view, "#active-lesson-join-form")
-    assert has_element?(view, "#join_name[value]:not([value=''])")
-    assert has_element?(view, "#active_join_name[value]:not([value=''])")
+    assert has_element?(view, "#join-room-callsign-note")
+    assert has_element?(view, "#active-join-callsign-note")
+    refute has_element?(view, "#join_name")
+    refute has_element?(view, "#active_join_name")
   end
 
   test "creates a supervised room and redirects with signed access", %{conn: conn} do
@@ -50,12 +53,32 @@ defmodule WailWeb.LobbyLiveTest do
     assert has_element?(view, "#join-room-form input[value='SIM-ABC123']")
   end
 
+  test "joins an existing room with a server-generated callsign", %{conn: conn} do
+    {room_id, room_pid} = create_lesson_room("Captain Vega")
+    on_exit(fn -> stop_room(room_pid) end)
+
+    {:ok, view, _html} = live(conn, ~p"/join/#{room_id}")
+
+    assert {:error, {:live_redirect, %{to: destination}}} =
+             render_submit(view, "join_room", %{"join" => %{"room_id" => room_id}})
+
+    uri = URI.parse(destination)
+    token = URI.decode_query(uri.query)["access"]
+
+    assert uri.path == "/rooms/#{room_id}"
+
+    assert {:ok, %{display_name: display_name, role: :student}} =
+             ClassroomAccess.verify(token, room_id, "lobby-test-guest")
+
+    assert [_first_name, _animal] = String.split(display_name)
+  end
+
   test "keeps the user in the lobby when a room is missing", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
     view
     |> form("#join-room-form", %{
-      "join" => %{"name" => "Student Sam", "room_id" => "SIM-MISSING"}
+      "join" => %{"room_id" => "SIM-MISSING"}
     })
     |> render_submit()
 
@@ -74,7 +97,7 @@ defmodule WailWeb.LobbyLiveTest do
 
     assert {:error, {:live_redirect, %{to: destination}}} =
              render_submit(view, "join_active", %{
-               "active_join" => %{"name" => "Student Sam", "room_id" => room_id}
+               "active_join" => %{"room_id" => room_id}
              })
 
     assert URI.parse(destination).path == "/rooms/#{room_id}"
