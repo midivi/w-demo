@@ -191,6 +191,38 @@ defmodule WailWeb.ClassroomLiveTest do
     end
   end
 
+  test "leaderboard renders in rank order as scores change", context do
+    %{room_id: room_id, instructor_conn: conn, instructor_token: token} = context
+
+    # alphabetical order deliberately differs from the score order we create
+    pilots =
+      for name <- ~w(Alpha Bravo Charlie Delta) do
+        {_view, id} = join_student(room_id, "rank-#{name}", name)
+        id
+      end
+
+    {:ok, view, _html} = live(conn, ~p"/rooms/#{room_id}?access=#{token}")
+    view |> element("#start-lesson") |> render_click()
+
+    # Delta is last alphabetically, so a stale list keeps them pinned at the bottom
+    delta = List.last(pilots)
+    {:ok, _} = Classrooms.flight_command(room_id, %{id: delta, role: :student}, {:adjust, :throttle, 10})
+    {:ok, _} = Classrooms.tick(room_id, 2_500)
+
+    assert eventually(fn -> List.first(leaderboard_order(view)) == delta end),
+           "scoring pilot should rank first, got #{inspect(leaderboard_order(view))}"
+  end
+
+  # rows are laid out with CSS `order`, so visual rank comes from the style,
+  # not from position in the DOM
+  defp leaderboard_order(view) do
+    ~r/id="leaderboard-([^"]+)"\s+style="order: (\d+)"/
+    |> Regex.scan(render(view))
+    |> Enum.map(fn [_, id, rank] -> {String.to_integer(rank), id} end)
+    |> Enum.sort()
+    |> Enum.map(&elem(&1, 1))
+  end
+
   test "roster reflects a join after the presence diffs are flushed", context do
     %{room_id: room_id, instructor_conn: conn, instructor_token: token} = context
     {:ok, view, _html} = live(conn, ~p"/rooms/#{room_id}?access=#{token}")

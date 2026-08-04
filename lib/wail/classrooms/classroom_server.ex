@@ -419,6 +419,10 @@ defmodule Wail.Classrooms.ClassroomServer do
 
   # Built from the raw sessions rather than from rendered student snapshots, so
   # scoring a leaderboard never forces a full snapshot of every student.
+  #
+  # Each row carries its rank because the client orders with CSS. Stream updates
+  # patch a row in place and never move it, so without an explicit rank a pilot
+  # who overtakes the field would keep their original position on screen.
   defp build_leaderboard(state) do
     state.students
     |> Map.values()
@@ -426,6 +430,8 @@ defmodule Wail.Classrooms.ClassroomServer do
       &%{id: &1.id, name: &1.name, score: &1.score, commands_judged: length(&1.results)}
     )
     |> Enum.sort_by(&{-&1.score, -&1.commands_judged, String.downcase(&1.name)})
+    |> Enum.with_index(1)
+    |> Enum.map(fn {entry, rank} -> Map.put(entry, :rank, rank) end)
   end
 
   defp student_snapshot(student, plan, config) do

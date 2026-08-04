@@ -1426,7 +1426,7 @@ defmodule WailWeb.ClassroomLive do
           Leaderboard
         </p><.icon name="hero-trophy" class={["size-4 text-amber-700"]} />
       </div>
-      <div id="leaderboard" phx-update="stream" class={["mt-4 space-y-2"]}>
+      <div id="leaderboard" phx-update="stream" class={["mt-4 flex flex-col gap-2"]}>
         <div
           id="leaderboard-empty"
           class={[
@@ -1438,6 +1438,7 @@ defmodule WailWeb.ClassroomLive do
         <div
           :for={{dom_id, student} <- @streams.leaderboard}
           id={dom_id}
+          style={"order: #{student.rank}"}
           class={["flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"]}
         >
           <span class={[
