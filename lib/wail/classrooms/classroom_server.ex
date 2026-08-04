@@ -373,14 +373,7 @@ defmodule Wail.Classrooms.ClassroomServer do
 
   defp supported_student_command(_command), do: {:error, :unsupported_command}
 
-  defp build_snapshot(state) do
-    {:ok, plan} = LessonPlan.fetch(state.selected_plan_id)
-
-    students =
-      state.students |> Map.values() |> Enum.map(&student_snapshot(&1, plan, state.lesson_config))
-
-    leaderboard = build_leaderboard(students)
-
+  defp base_snapshot(state, plan) do
     %{
       room_id: state.room_id,
       created_at: state.created_at,
@@ -389,35 +382,50 @@ defmodule Wail.Classrooms.ClassroomServer do
       status: state.status,
       joinable?: state.status == :waiting,
       plan: plan_snapshot(plan),
-      config: config_snapshot(state.lesson_config),
-      students: students,
-      leaderboard: leaderboard
+      config: config_snapshot(state.lesson_config)
     }
+  end
+
+  defp build_snapshot(state) do
+    {:ok, plan} = LessonPlan.fetch(state.selected_plan_id)
+
+    students =
+      state.students |> Map.values() |> Enum.map(&student_snapshot(&1, plan, state.lesson_config))
+
+    Map.merge(base_snapshot(state, plan), %{
+      students: students,
+      leaderboard: build_leaderboard(state)
+    })
   end
 
   defp build_participant_snapshot(state, %{role: :instructor}), do: build_snapshot(state)
 
+  # Answering one student's command must not cost a rebuild of the whole class.
+  # Only their own aircraft is rendered, so only their own aircraft is built.
   defp build_participant_snapshot(state, %{role: :student, id: student_id}) do
-    state
-    |> build_snapshot()
-    |> scope_snapshot_to_student(student_id)
+    {:ok, plan} = LessonPlan.fetch(state.selected_plan_id)
+
+    students =
+      case Map.fetch(state.students, student_id) do
+        {:ok, student} -> [student_snapshot(student, plan, state.lesson_config)]
+        :error -> []
+      end
+
+    Map.merge(base_snapshot(state, plan), %{
+      students: students,
+      leaderboard: build_leaderboard(state)
+    })
   end
 
-  defp build_leaderboard(students) do
-    students
-    |> Enum.sort_by(&{-&1.score, -length(&1.results), String.downcase(&1.name)})
-    |> Enum.map(fn student ->
-      %{
-        id: student.id,
-        name: student.name,
-        score: student.score,
-        commands_judged: length(student.results)
-      }
-    end)
-  end
-
-  defp scope_snapshot_to_student(snapshot, student_id) do
-    %{snapshot | students: Enum.filter(snapshot.students, &(&1.id == student_id))}
+  # Built from the raw sessions rather than from rendered student snapshots, so
+  # scoring a leaderboard never forces a full snapshot of every student.
+  defp build_leaderboard(state) do
+    state.students
+    |> Map.values()
+    |> Enum.map(
+      &%{id: &1.id, name: &1.name, score: &1.score, commands_judged: length(&1.results)}
+    )
+    |> Enum.sort_by(&{-&1.score, -&1.commands_judged, String.downcase(&1.name)})
   end
 
   defp student_snapshot(student, plan, config) do

@@ -163,6 +163,54 @@ defmodule WailWeb.ClassroomLiveTest do
     refute has_element?(view, "#student-cockpit")
   end
 
+  test "leaderboard is fully populated once the lesson starts", context do
+    %{room_id: room_id, instructor_conn: conn, instructor_token: token} = context
+
+    joined =
+      for i <- 1..8 do
+        join_student(room_id, "lb-guest-#{i}", "Pilot #{i}")
+      end
+
+    ids = Enum.map(joined, &elem(&1, 1))
+    {student_view, _} = hd(joined)
+
+    {:ok, view, _html} = live(conn, ~p"/rooms/#{room_id}?access=#{token}")
+
+    # deferred while waiting: nobody renders the board yet
+    refute has_element?(view, "#leaderboard-panel")
+
+    view |> element("#start-lesson") |> render_click()
+
+    # every pilot must appear, not just the ones whose score changed
+    for id <- ids do
+      assert has_element?(view, "#leaderboard-#{id}"),
+             "instructor leaderboard row for #{id} missing after start"
+
+      assert has_element?(student_view, "#leaderboard-#{id}"),
+             "student leaderboard row for #{id} missing after start"
+    end
+  end
+
+  test "roster reflects a join after the presence diffs are flushed", context do
+    %{room_id: room_id, instructor_conn: conn, instructor_token: token} = context
+    {:ok, view, _html} = live(conn, ~p"/rooms/#{room_id}?access=#{token}")
+
+    refute has_element?(view, "#classroom-students", "Sky Pilot")
+
+    {_student_view, _id} = join_student(room_id, "roster-guest", "Sky Pilot")
+
+    # roster updates are coalesced, so the render is not immediate
+    assert eventually(fn -> has_element?(view, "#classroom-students", "Sky Pilot") end)
+  end
+
+  defp eventually(check, attempts \\ 40) do
+    cond do
+      check.() -> true
+      attempts <= 0 -> false
+      true -> Process.sleep(25) && eventually(check, attempts - 1)
+    end
+  end
+
   defp join_student(room_id, guest_id, name) do
     token = ClassroomAccess.sign(room_id, guest_id, name, :student)
     assert {:ok, %{id: student_id}} = ClassroomAccess.verify(token, room_id, guest_id)

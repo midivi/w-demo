@@ -6,6 +6,9 @@ defmodule WailWeb.ClassroomLive do
   alias WailWeb.ClassroomAccess
   alias WailWeb.ClassroomPresence
 
+  # roster updates are coalesced into one re-render per window
+  @presence_flush_ms 250
+
   @impl true
   def mount(%{"room_id" => room_id} = params, session, socket) do
     room_id = Classrooms.normalize_room_id(room_id)
@@ -37,6 +40,11 @@ defmodule WailWeb.ClassroomLive do
         |> assign(:access_error, nil)
         |> assign(:room_id, room_id)
         |> assign(:participant, participant)
+        # the roster is held here and patched from presence diffs, so a join
+        # never costs a full Presence.list + re-sort + re-render
+        |> assign(:roster, Map.new(roster, &{&1.id, &1}))
+        |> assign(:pending_presence, %{})
+        |> assign(:presence_timer, nil)
         |> assign(:participant_count, length(roster))
         |> assign(:student_count, length(students))
         |> assign(:student_join_url, WailWeb.Endpoint.url() <> ~p"/join/#{room_id}")
@@ -137,17 +145,75 @@ defmodule WailWeb.ClassroomLive do
     {:noreply, sync_snapshot(socket, snapshot)}
   end
 
-  def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket) do
-    roster = roster(Classrooms.topic(socket.assigns.room_id))
-    {instructors, students} = Enum.split_with(roster, &(&1.role == :instructor))
+  # A class arriving together produces a burst of presence diffs. Coalesce them
+  # into one roster update per window instead of one per arrival: 100 students
+  # joining should cost each open page a handful of re-renders, not 100.
+  def handle_info(
+        %Phoenix.Socket.Broadcast{event: "presence_diff", payload: %{joins: joins, leaves: leaves}},
+        socket
+      ) do
+    pending = socket.assigns.pending_presence
+
+    pending =
+      leaves
+      |> Enum.reject(fn {id, _} -> Map.has_key?(joins, id) end)
+      |> Enum.reduce(pending, fn {id, _meta}, acc -> Map.put(acc, id, :leave) end)
+
+    pending =
+      Enum.reduce(joins, pending, fn {id, %{metas: metas}}, acc ->
+        meta = List.first(metas)
+        person = %{id: id, name: meta.name, role: meta.role, connections: length(metas)}
+        Map.put(acc, id, {:join, person})
+      end)
+
+    socket = assign(socket, :pending_presence, pending)
+
+    socket =
+      if socket.assigns.presence_timer do
+        socket
+      else
+        assign(
+          socket,
+          :presence_timer,
+          Process.send_after(self(), :flush_presence, @presence_flush_ms)
+        )
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info(:flush_presence, socket) do
+    socket =
+      Enum.reduce(socket.assigns.pending_presence, socket, fn
+        {id, :leave}, acc ->
+          case Map.fetch(acc.assigns.roster, id) do
+            {:ok, person} ->
+              acc
+              |> assign(:roster, Map.delete(acc.assigns.roster, id))
+              |> stream_delete(stream_for(person.role), person)
+
+            :error ->
+              acc
+          end
+
+        {id, {:join, person}}, acc ->
+          acc
+          |> assign(:roster, Map.put(acc.assigns.roster, id, person))
+          |> stream_insert(stream_for(person.role), person)
+      end)
+
+    roster = socket.assigns.roster
 
     {:noreply,
      socket
-     |> assign(:participant_count, length(roster))
-     |> assign(:student_count, length(students))
-     |> stream(:instructors, instructors, reset: true)
-     |> stream(:students, students, reset: true)}
+     |> assign(:pending_presence, %{})
+     |> assign(:presence_timer, nil)
+     |> assign(:participant_count, map_size(roster))
+     |> assign(:student_count, Enum.count(roster, fn {_id, p} -> p.role == :student end))}
   end
+
+  defp stream_for(:instructor), do: :instructors
+  defp stream_for(:student), do: :students
 
   defp sync_snapshot(socket, snapshot, opts \\ []) do
     previous = socket.assigns[:snapshot]
@@ -164,32 +230,24 @@ defmodule WailWeb.ClassroomLive do
       |> assign(:snapshot, snapshot)
       |> assign(:current_student, current_student)
       |> assign(:lesson_in_progress?, snapshot.status in [:running, :paused])
-      |> maybe_stream(
-        :leaderboard,
-        snapshot.leaderboard,
-        previous && previous.leaderboard,
-        initial?
-      )
-      |> maybe_stream_for_role(
+      |> sync_leaderboard_stream(snapshot, previous)
+      |> patch_stream_for_role(
         :student_progress,
         snapshot.students,
         previous && previous.students,
-        initial?,
         participant,
         :instructor
       )
-      |> maybe_stream(
+      |> patch_stream(
         :transcript,
         transcript,
-        previous && transcript_for(previous, participant),
-        initial?
+        previous && transcript_for(previous, participant)
       )
-      |> maybe_stream_for_role(
+      |> patch_stream_for_role(
         :command_progress,
         command_progress,
         previous &&
           command_progress(previous.plan.commands, current_student_for(previous, participant)),
-        initial?,
         participant,
         :student
       )
@@ -208,36 +266,59 @@ defmodule WailWeb.ClassroomLive do
     end
   end
 
-  defp maybe_stream(socket, name, items, previous_items, initial?) do
-    if initial? or items != previous_items do
-      stream(socket, name, items, reset: !initial?)
-    else
-      socket
+  # The board is only rendered once the lesson leaves :waiting, so a joining
+  # student should not pay to build a hundred-row stream nobody can see yet.
+  # It is populated in full the first time it actually becomes visible --
+  # patching from an empty stream would silently drop every unchanged row.
+  defp sync_leaderboard_stream(socket, snapshot, previous) do
+    cond do
+      socket.assigns[:leaderboard_streamed?] ->
+        patch_stream(socket, :leaderboard, snapshot.leaderboard, previous && previous.leaderboard)
+
+      # still waiting: the board is not rendered, so keep the client's stream
+      # empty rather than rebuilding it on every arrival
+      snapshot.status == :waiting ->
+        if previous == nil do
+          socket
+          |> assign(:leaderboard_streamed?, false)
+          |> stream(:leaderboard, [])
+        else
+          socket
+        end
+
+      true ->
+        socket
+        |> assign(:leaderboard_streamed?, true)
+        |> stream(:leaderboard, snapshot.leaderboard, reset: true)
     end
   end
 
-  defp maybe_stream_for_role(
-         socket,
-         name,
-         items,
-         previous_items,
-         initial?,
-         %{role: role},
-         role
-       ) do
-    maybe_stream(socket, name, items, previous_items, initial?)
+  # Replaces `stream(..., reset: true)`, which discarded the client's whole list
+  # and re-rendered every row on every update. Here only rows that actually
+  # changed are sent. `stream_insert` on an existing dom id updates it in place
+  # and does NOT reorder it, so unchanged rows cost nothing.
+  defp patch_stream(socket, name, items, nil), do: stream(socket, name, items)
+
+  defp patch_stream(socket, name, items, previous_items) do
+    previous = Map.new(previous_items, &{&1.id, &1})
+    current = Map.new(items, &{&1.id, &1})
+
+    socket =
+      Enum.reduce(previous_items, socket, fn item, acc ->
+        if Map.has_key?(current, item.id), do: acc, else: stream_delete(acc, name, item)
+      end)
+
+    Enum.reduce(items, socket, fn item, acc ->
+      if Map.get(previous, item.id) == item, do: acc, else: stream_insert(acc, name, item)
+    end)
   end
 
-  defp maybe_stream_for_role(
-         socket,
-         _name,
-         _items,
-         _previous_items,
-         _initial?,
-         _participant,
-         _role
-       ),
-       do: socket
+  defp patch_stream_for_role(socket, name, items, previous_items, %{role: role}, role) do
+    patch_stream(socket, name, items, previous_items)
+  end
+
+  defp patch_stream_for_role(socket, _name, _items, _previous_items, _participant, _role),
+    do: socket
 
   defp current_student_for(snapshot, %{role: :student, id: id}) do
     Enum.find(snapshot.students, &(&1.id == id))
